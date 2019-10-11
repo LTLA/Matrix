@@ -149,7 +149,7 @@ setClass("TsparseMatrix", contains = c("sparseMatrix", "VIRTUAL"),
          )
 
 setClass("CsparseMatrix", contains = c("sparseMatrix", "VIRTUAL"),
-	 slots = c(i = "integer", p = "integer"),
+	 slots = c(i = "integer", p = "numeric"),
 	 prototype = prototype(p = 0L),# to be valid
          validity = function(object) .Call(Csparse_validate, object)
          )
