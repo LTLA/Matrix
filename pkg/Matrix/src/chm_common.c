@@ -255,6 +255,7 @@ CHM_SP as_cholmod_sparse(CHM_SP ans, SEXP x,
     int *dims = INTEGER(GET_SLOT(x, Matrix_DimSym)),
 	ctype = R_check_class_etc(x, valid);
     SEXP islot = GET_SLOT(x, Matrix_iSym);
+    SEXP pslot = GET_SLOT(x, Matrix_pSym);
 
     if (ctype < 0) error(_("invalid class of object to as_cholmod_sparse"));
     if (!isValid_Csparse(x))
@@ -264,9 +265,24 @@ CHM_SP as_cholmod_sparse(CHM_SP ans, SEXP x,
     ans->itype = CHOLMOD_INT;	/* characteristics of the system */
     ans->dtype = CHOLMOD_DOUBLE;
     ans->packed = TRUE;
+
 				/* slots always present */
     ans->i = INTEGER(islot);
-    ans->p = INTEGER(GET_SLOT(x, Matrix_pSym));
+    if (isReal(pslot)) {
+        R_xlen_t counter, lp = xlength(pslot);
+        double* xp = REAL(pslot);
+        int* copy = (int*)R_alloc(lp, sizeof(int));
+
+        /* TODO: copying to an integer array until we flip 
+         * over CHOLMOD to use longints. */
+        for (counter=0; counter<lp; ++counter) 
+            copy[counter] = (int)xp[counter];
+
+        ans->p = copy;
+    } else {
+        ans->p = INTEGER(GET_SLOT(x, Matrix_pSym));
+    }
+
 				/* dimensions and nzmax */
     ans->nrow = dims[0];
     ans->ncol = dims[1];

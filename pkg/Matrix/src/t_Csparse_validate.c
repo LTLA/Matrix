@@ -23,6 +23,34 @@
 #  error "no valid  _t_Csparse_* option"
 #endif
 
+#define CSPARSE_CHECK_P(xp) \
+    if (xp[0] != 0) \
+	CSPARSE_VAL_RETURN_STRING("first element of slot p must be zero"); \
+    if (length(islot) < xp[ncol]) /* allow larger slots from over-allocation!*/ \
+	CSPARSE_VAL_RETURN_STRING("last element of slot p must match length of slots i and x"); \
+    for (j = 0; j < xp[ncol]; j++) { \
+	if (xi[j] < 0 || xi[j] >= nrow) \
+	    CSPARSE_VAL_RETURN_STRING("all row indices must be between 0 and nrow-1"); \
+    } \
+    sorted = TRUE; strictly = TRUE; \
+    for (j = 0; j < ncol; j++) { \
+	if (xp[j] > xp[j + 1]) \
+	    CSPARSE_VAL_RETURN_STRING("slot p must be non-decreasing"); \
+	if(sorted) /* only act if >= 2 entries in column j : */ \
+	    for (k = xp[j] + 1; k < xp[j + 1]; k++) { \
+		if (xi[k] < xi[k - 1]) \
+		    sorted = FALSE; \
+		else if (xi[k] == xi[k - 1]) \
+		    strictly = FALSE; \
+	    } \
+    }
+
+#define CSPARSE_CHECK_P_UNSORTED(xp) \
+	    for (j = 0; j < ncol; j++) { \
+		for (k = xp[j] + 1; k < xp[j + 1]; k++) \
+		    if (xi[k] == xi[k - 1]) \
+			CSPARSE_VAL_RETURN_STRING("slot i is not *strictly* increasing inside a column (even after cholmod_l_sort)"); \
+	    }
 
 CSPARSE_VAL_RES_TYPE CSPARSE_VAL_FN_NAME(SEXP x, Rboolean maybe_modify)
 {
@@ -34,31 +62,21 @@ CSPARSE_VAL_RES_TYPE CSPARSE_VAL_FN_NAME(SEXP x, Rboolean maybe_modify)
 	*dims = INTEGER(GET_SLOT(x, Matrix_DimSym)),
 	nrow = dims[0],
 	ncol = dims[1],
-	*xp = INTEGER(pslot),
+	*xpI = NULL,
 	*xi = INTEGER(islot);
+    double* xpD = NULL;
 
     if (length(pslot) != dims[1] + 1)
 	CSPARSE_VAL_RETURN_STRING("slot p must have length = ncol(.) + 1");
-    if (xp[0] != 0)
-	CSPARSE_VAL_RETURN_STRING("first element of slot p must be zero");
-    if (length(islot) < xp[ncol]) /* allow larger slots from over-allocation!*/
-	CSPARSE_VAL_RETURN_STRING("last element of slot p must match length of slots i and x");
-    for (j = 0; j < xp[ncol]; j++) {
-	if (xi[j] < 0 || xi[j] >= nrow)
-	    CSPARSE_VAL_RETURN_STRING("all row indices must be between 0 and nrow-1");
+
+    if (isReal(pslot)) {
+        xpD=REAL(pslot);
+        CSPARSE_CHECK_P(xpD);
+    } else {
+        xpI=INTEGER(pslot);
+        CSPARSE_CHECK_P(xpI);
     }
-    sorted = TRUE; strictly = TRUE;
-    for (j = 0; j < ncol; j++) {
-	if (xp[j] > xp[j + 1])
-	    CSPARSE_VAL_RETURN_STRING("slot p must be non-decreasing");
-	if(sorted) /* only act if >= 2 entries in column j : */
-	    for (k = xp[j] + 1; k < xp[j + 1]; k++) {
-		if (xi[k] < xi[k - 1])
-		    sorted = FALSE;
-		else if (xi[k] == xi[k - 1])
-		    strictly = FALSE;
-	    }
-    }
+
     if (!sorted) {
 	if(maybe_modify) {
 	    CHM_SP chx = (CHM_SP) alloca(sizeof(cholmod_sparse));
@@ -68,11 +86,11 @@ CSPARSE_VAL_RES_TYPE CSPARSE_VAL_FN_NAME(SEXP x, Rboolean maybe_modify)
 
 	    /* Now re-check that row indices are *strictly* increasing
 	     * (and not just increasing) within each column : */
-	    for (j = 0; j < ncol; j++) {
-		for (k = xp[j] + 1; k < xp[j + 1]; k++)
-		    if (xi[k] == xi[k - 1])
-			CSPARSE_VAL_RETURN_STRING("slot i is not *strictly* increasing inside a column (even after cholmod_l_sort)");
-	    }
+        if (isReal(pslot)) {
+            CSPARSE_CHECK_P_UNSORTED(xpD);
+        } else {
+            CSPARSE_CHECK_P_UNSORTED(xpI);
+        }
 	} else { /* no modifying sorting : */
 	    CSPARSE_VAL_RETURN_STRING("row indices are not sorted within columns");
 	}
@@ -81,6 +99,9 @@ CSPARSE_VAL_RES_TYPE CSPARSE_VAL_FN_NAME(SEXP x, Rboolean maybe_modify)
     }
     CSPARSE_VAL_RETURN_TRUE;
 }
+
+#undef CSPARSE_CHECK_P
+#undef CSPARSE_CHECK_P_UNSORTED
 
 #undef CSPARSE_VAL_RES_TYPE
 #undef CSPARSE_VAL_FN_NAME
