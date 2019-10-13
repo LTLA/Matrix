@@ -7,6 +7,20 @@
 #include "Tsparse.h"
 #include "chm_common.h"
 
+#define CSPARSE_CHECK_P_CHEAP(xp) \
+    if (xp[0] != 0) \
+	return FALSE; \
+    if (length(islot) < xp[ncol]) /* allow larger slots from over-allocation!*/ \
+	return FALSE; \
+    for (j = 0; j < xp[ncol]; j++) { \
+	if (xi[j] < 0 || xi[j] >= nrow) \
+	    return FALSE; \
+    } \
+    for (j = 0; j < ncol; j++) { \
+	if (xp[j] > xp[j + 1]) \
+	    return FALSE; \
+    } 
+
 /** "Cheap" C version of  Csparse_validate() - *not* sorting : */
 Rboolean isValid_Csparse(SEXP x)
 {
@@ -16,23 +30,19 @@ Rboolean isValid_Csparse(SEXP x)
     int *dims = INTEGER(GET_SLOT(x, Matrix_DimSym)), j,
 	nrow = dims[0],
 	ncol = dims[1],
-	*xp = INTEGER(pslot),
 	*xi = INTEGER(islot);
 
     if (length(pslot) != dims[1] + 1)
 	return FALSE;
-    if (xp[0] != 0)
-	return FALSE;
-    if (length(islot) < xp[ncol]) /* allow larger slots from over-allocation!*/
-	return FALSE;
-    for (j = 0; j < xp[ncol]; j++) {
-	if (xi[j] < 0 || xi[j] >= nrow)
-	    return FALSE;
+
+    if (isReal(pslot)){
+        double* xp = REAL(pslot);
+        CSPARSE_CHECK_P_CHEAP(xp);
+    } else {
+        int* xp = INTEGER(pslot);
+        CSPARSE_CHECK_P_CHEAP(xp);
     }
-    for (j = 0; j < ncol; j++) {
-	if (xp[j] > xp[j + 1])
-	    return FALSE;
-    }
+
     return TRUE;
 }
 
@@ -59,42 +69,54 @@ SEXP Csparse_sort (SEXP x) {
    return x;
 }
 
+#define CSPARSE_CHECK_P_STRING(xp) \
+    if (xp[0] != 0) \
+	return mkString(_("first element of slot p must be zero")); \
+    if (length(jslot) < xp[nrow]) /* allow larger slots from over-allocation!*/ \
+	return \
+	    mkString(_("last element of slot p must match length of slots j and x")); \
+    for (i = 0; i < nrow; i++) { \
+	if (xp[i] > xp[i+1]) \
+	    return mkString(_("slot p must be non-decreasing")); \
+	if(sorted) \
+	    for (k = xp[i] + 1; k < xp[i + 1]; k++) { \
+		if (xj[k] < xj[k - 1]) \
+		    sorted = FALSE; \
+		else if (xj[k] == xj[k - 1]) \
+		    strictly = FALSE; \
+	    } \
+    } 
+
 SEXP Rsparse_validate(SEXP x)
 {
     /* NB: we do *NOT* check a potential 'x' slot here, at all */
     SEXP pslot = GET_SLOT(x, Matrix_pSym),
 	jslot = GET_SLOT(x, Matrix_jSym);
     Rboolean sorted, strictly;
+
     int i, k,
 	*dims = INTEGER(GET_SLOT(x, Matrix_DimSym)),
 	nrow = dims[0],
 	ncol = dims[1],
-	*xp = INTEGER(pslot),
 	*xj = INTEGER(jslot);
 
     if (length(pslot) != dims[0] + 1)
 	return mkString(_("slot p must have length = nrow(.) + 1"));
-    if (xp[0] != 0)
-	return mkString(_("first element of slot p must be zero"));
-    if (length(jslot) < xp[nrow]) /* allow larger slots from over-allocation!*/
-	return
-	    mkString(_("last element of slot p must match length of slots j and x"));
+
     for (i = 0; i < length(jslot); i++) {
 	if (xj[i] < 0 || xj[i] >= ncol)
 	    return mkString(_("all column indices must be between 0 and ncol-1"));
     }
+
     sorted = TRUE; strictly = TRUE;
-    for (i = 0; i < nrow; i++) {
-	if (xp[i] > xp[i+1])
-	    return mkString(_("slot p must be non-decreasing"));
-	if(sorted)
-	    for (k = xp[i] + 1; k < xp[i + 1]; k++) {
-		if (xj[k] < xj[k - 1])
-		    sorted = FALSE;
-		else if (xj[k] == xj[k - 1])
-		    strictly = FALSE;
-	    }
+    if (isReal(pslot)) {
+        double* xp = REAL(pslot);
+        CSPARSE_CHECK_P_STRING(xp);
+    } else {
+        int* xp = INTEGER(pslot);
+        CSPARSE_CHECK_P_STRING(xp);
     }
+
     if (!sorted)
 	/* cannot easily use cholmod_sort(.) ... -> "error out" :*/
 	return mkString(_("slot j is not increasing inside a column"));

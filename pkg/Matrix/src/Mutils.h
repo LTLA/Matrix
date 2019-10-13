@@ -274,6 +274,17 @@ int* expand_cmprPt(int ncol, const int mp[], int mj[])
     return mj;
 }
 
+static R_INLINE
+int* expand_cmprPt_dbl(int ncol, const double mp[], int mj[])
+{
+    int j;
+    for (j = 0; j < ncol; j++) {
+	double j2 = mp[j+1], jj;
+	for (jj = mp[j]; jj < j2; jj++) mj[(int)jj] = j;
+    }
+    return mj;
+}
+
 /**
  * Check if slot(obj, "x") contains any NA (or NaN).
  *
